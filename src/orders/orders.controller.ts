@@ -23,4 +23,9 @@ export class OrdersController {
   findAll() {
     return this.ordersService.getAllOrders();
   }
+  @Post('webhook')
+  @ApiOperation({ summary: 'Endpoint untuk menerima update otomatis dari Midtrans (Webhook)' })
+  async midtransWebhook(@Body() payload: any) {
+    return this.ordersService.handleMidtransWebhook(payload);
+  }
 }

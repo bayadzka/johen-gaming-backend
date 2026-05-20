@@ -1,4 +1,5 @@
 // src/orders/orders.service.ts
+import * as crypto from 'crypto';
 import { Injectable, InternalServerErrorException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -130,4 +131,45 @@ export class OrdersService {
     if (error) throw new InternalServerErrorException(error.message);
     return { data };
   }
+  // Webhook untuk menerima update status dari Midtrans
+  async handleMidtransWebhook(payload: any) {
+    const { order_id, transaction_status, fraud_status, signature_key, status_code, gross_amount } = payload;
+
+    // 1. Verifikasi Keamanan (Signature Key)
+    const serverKey = this.configService.get<string>('MIDTRANS_SERVER_KEY');
+    
+    // Hash rumus: SHA512(order_id + status_code + gross_amount + serverKey)
+    const expectedSignature = crypto
+      .createHash('sha512')
+      .update(order_id + status_code + gross_amount + serverKey)
+      .digest('hex');
+
+    if (expectedSignature !== signature_key) {
+      throw new BadRequestException('Signature Key tidak valid! Akses ditolak.');
+    }
+
+    // 2. Mapping Status Midtrans ke Status Database Kita
+    let paymentStatus = 'pending';
+    if (transaction_status === 'capture' || transaction_status === 'settlement') {
+      if (fraud_status === 'accept') {
+        paymentStatus = 'success';
+      }
+    } else if (transaction_status === 'cancel' || transaction_status === 'deny' || transaction_status === 'expire') {
+      paymentStatus = 'failed';
+    }
+
+    // 3. Update Status di Supabase
+    const supabase = this.supabaseService.getClient();
+    const { error } = await supabase
+      .from('orders')
+      .update({ payment_status: paymentStatus })
+      .eq('id', order_id);
+
+    if (error) {
+      throw new InternalServerErrorException('Gagal memperbarui status pesanan');
+    }
+
+    return { message: 'Webhook berhasil diproses, status pesanan diperbarui' };
+  }
+  
 }
