@@ -11,7 +11,7 @@ export class SupabaseService implements OnModuleInit {
 
   onModuleInit() {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const supabaseKey = this.configService.get<string>('SUPABASE_ANON_KEY');
+    const supabaseKey = this.configService.get<string>('SUPABASE_SERVICE_KEY');
 
     if (!supabaseUrl || !supabaseKey) {
       console.error('❌ ERROR: Supabase URL atau Key tidak ditemukan di file .env');
