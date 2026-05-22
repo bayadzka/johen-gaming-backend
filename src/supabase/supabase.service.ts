@@ -1,40 +1,46 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import * as WebSocket from 'ws'; // <-- Import WebSocket di sini
+import * as WebSocket from 'ws';
 
 @Injectable()
 export class SupabaseService implements OnModuleInit {
-  private supabase!: SupabaseClient;
+  private adminClient!: SupabaseClient;
+  private anonClient!: SupabaseClient;
 
   constructor(private configService: ConfigService) {}
 
   onModuleInit() {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const supabaseKey = this.configService.get<string>('SUPABASE_SERVICE_KEY');
+    const anonKey = this.configService.get<string>('SUPABASE_ANON_KEY');
+    const serviceKey = this.configService.get<string>('SUPABASE_SERVICE_KEY');
 
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('❌ ERROR: Supabase URL atau Key tidak ditemukan di file .env');
+    if (!supabaseUrl || !anonKey || !serviceKey) {
+      console.error('❌ ERROR: Kredensial Supabase tidak lengkap di .env');
       return;
     }
 
-    // Inisialisasi dengan tambahan konfigurasi untuk Node.js v20
-    this.supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: {
-        persistSession: false, // Best practice untuk server/back-end
-      },
-      realtime: {
-        transport: WebSocket as any, // <-- Menyuntikkan 'ws' ke Supabase
-      },
-    });
+    const options = {
+      auth: { persistSession: false },
+      realtime: { transport: WebSocket as any },
+    };
+
+    // Client Anon khusus untuk operasi Auth (Register/Login)
+    this.anonClient = createClient(supabaseUrl, anonKey, options);
     
-    console.log('✅ Supabase Client berhasil diinisialisasi');
+    // Client Admin khusus untuk operasi CRUD Database
+    this.adminClient = createClient(supabaseUrl, serviceKey, options);
+    
+    console.log('✅ Supabase Dual-Client berhasil diinisialisasi');
   }
 
+  // Panggil fungsi ini di Auth Service
+  getAnonClient(): SupabaseClient {
+    return this.anonClient;
+  }
+
+  // Otomatis terpakai di Products & Orders Service
   getClient(): SupabaseClient {
-    if (!this.supabase) {
-      throw new Error('Supabase client belum siap. Cek konfigurasi .env kamu.');
-    }
-    return this.supabase;
+    return this.adminClient;
   }
 }

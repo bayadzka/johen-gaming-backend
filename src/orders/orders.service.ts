@@ -1,9 +1,9 @@
 // src/orders/orders.service.ts
-import * as crypto from 'crypto';
 import { Injectable, InternalServerErrorException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CheckoutDto } from './dto/orders.dto';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class OrdersService {
@@ -12,113 +12,110 @@ export class OrdersService {
     private readonly configService: ConfigService
   ) {}
 
-  async checkout(checkoutDto: CheckoutDto, customerId: string) {
+  async checkout(checkoutDto: CheckoutDto, customerId: string | null = null) {
     const supabase = this.supabaseService.getClient();
+    let productName = '';
+    let productPrice = 0;
 
-    // 1. Ambil data produk & pastikan produk tersedia
-    const { data: product, error: pError } = await supabase
-      .from('products')
-      .select('*')
-      .eq('id', checkoutDto.product_id)
-      .single();
+    // 1. Pengecekan Dinamis berdasarkan Tipe Order
+    if (checkoutDto.order_type === 'account') {
+      const { data, error } = await supabase
+        .from('account_products')
+        .select('*')
+        .eq('id', checkoutDto.product_ref_id)
+        .single();
+        
+      if (error || !data) throw new NotFoundException('Akun tidak ditemukan');
+      if (data.status !== 'available') throw new BadRequestException('Akun ini sudah terjual');
+      
+      productName = data.title;
+      productPrice = data.final_price;
 
-    if (pError || !product) throw new NotFoundException('Produk tidak ditemukan');
-    if (product.status === 'sold' || product.stock <= 0) {
-      throw new BadRequestException('Maaf, produk ini sudah habis terjual');
+    } else if (checkoutDto.order_type === 'topup') {
+      if (!checkoutDto.game_credentials) {
+        throw new BadRequestException('Data ID & Server Game wajib diisi untuk Top Up');
+      }
+      const { data, error } = await supabase
+        .from('topup_packages')
+        .select('*')
+        .eq('id', checkoutDto.product_ref_id)
+        .single();
+        
+      if (error || !data) throw new NotFoundException('Paket Top Up tidak ditemukan');
+      
+      productName = data.name;
+      productPrice = data.price;
     }
 
-    // 2. Simulasi Perhitungan Voucher Code
-    let totalPrice = product.price;
-    if (checkoutDto.voucher_code && checkoutDto.voucher_code.toUpperCase() === 'JOHENUNTUNG') {
-      totalPrice = Math.max(0, product.price - 10000); // Potongan Rp 10.000
+    // 2. Simulasi Voucher
+    let totalPrice = productPrice;
+    if (checkoutDto.voucher_code?.toUpperCase() === 'JOHENUNTUNG') {
+      totalPrice = Math.max(0, productPrice - 10000);
     }
 
-    // 3. Insert draf pesanan ke database Supabase (Status masih pending)
+    // 3. Insert ke Tabel Orders Baru
     const { data: order, error: oError } = await supabase
       .from('orders')
-      .insert([
-        {
-          customer_id: customerId,
-          customer_name: checkoutDto.customer_name,
-          customer_phone: checkoutDto.customer_phone,
-          product_id: checkoutDto.product_id,
-          voucher_code: checkoutDto.voucher_code || null,
-          total_price: totalPrice,
-          payment_status: 'pending',
-        },
-      ])
+      .insert([{
+        customer_id: customerId,
+        customer_name: checkoutDto.customer_name,
+        customer_phone: checkoutDto.customer_phone,
+        order_type: checkoutDto.order_type,
+        product_ref_id: checkoutDto.product_ref_id,
+        game_credentials: checkoutDto.game_credentials,
+        voucher_code: checkoutDto.voucher_code || null,
+        total_amount: totalPrice,
+        payment_status: 'pending',
+      }])
       .select()
       .single();
 
-    if (oError || !order) throw new InternalServerErrorException('Gagal membuat data pesanan');
+    if (oError || !order) throw new InternalServerErrorException('Gagal membuat pesanan');
 
-    // 4. Tembak API Midtrans Snap untuk membuat Link Pembayaran
+    // 4. Hit Midtrans Snap
     const serverKey = this.configService.get<string>('MIDTRANS_SERVER_KEY');
     const authHeader = Buffer.from(`${serverKey}:`).toString('base64');
 
     const midtransPayload = {
-      transaction_details: {
-        order_id: order.id, // ID Order dari Supabase kita pakai sebagai Order ID Midtrans
-        gross_amount: totalPrice,
-      },
-      item_details: [
-        {
-          id: product.id,
-          price: totalPrice,
-          quantity: 1,
-          name: product.name,
-        },
-      ],
-      customer_details: {
-        first_name: checkoutDto.customer_name,
-        phone: checkoutDto.customer_phone,
-      },
+      transaction_details: { order_id: order.id, gross_amount: totalPrice },
+      item_details: [{ id: checkoutDto.product_ref_id, price: totalPrice, quantity: 1, name: productName.substring(0, 50) }],
+      customer_details: { first_name: checkoutDto.customer_name, phone: checkoutDto.customer_phone },
     };
 
     try {
       const response = await fetch('https://app.sandbox.midtrans.com/snap/v1/transactions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Basic ${authHeader}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': `Basic ${authHeader}` },
         body: JSON.stringify(midtransPayload),
       });
 
       const midtransData = await response.json();
+      if (!response.ok) throw new Error(midtransData.message);
 
-      if (!response.ok) {
-        throw new Error(midtransData.message || 'Gagal merespons ke Midtrans');
-      }
+      // Update payment_url di database
+      await supabase.from('orders')
+        .update({ 
+          payment_url: midtransData.redirect_url,
+          snap_token: midtransData.token
+        })
+        .eq('id', order.id);
 
-      // 5. Update data order di Supabase dengan URL Pembayaran dari Midtrans
-      const { data: updatedOrder, error: uError } = await supabase
-        .from('orders')
-        .update({ payment_url: midtransData.redirect_url })
-        .eq('id', order.id)
-        .select()
-        .single();
-
-      if (uError) throw new InternalServerErrorException('Gagal memperbarui link pembayaran');
-
-      // Kembalikan ringkasan pesanan lengkap sesuai requirement dokumen
       return {
-        message: 'Checkout sukses, silakan lakukan pembayaran',
+        message: 'Checkout sukses',
         order_summary: {
-          order_id: updatedOrder.id,
-          product_name: product.name,
-          original_price: product.price,
-          discount: product.price - totalPrice,
-          total_payment: updatedOrder.total_price,
-          payment_url: updatedOrder.payment_url,
-          status: updatedOrder.payment_status,
+          order_id: order.id,
+          product_name: productName,
+          total_payment: totalPrice,
+          snap_token: midtransData.token,
+          status: 'pending',
         },
       };
     } catch (err: any) {
-      throw new InternalServerErrorException(err.message || 'Terjadi kesalahan sistem pembayaran');
+      throw new InternalServerErrorException(err.message || 'Error dari Midtrans');
     }
   }
+
+  // ... (Fungsi getAllOrders dan handleMidtransWebhook biarkan sama persis seperti sebelumnya) ...
 
   // Menampilkan semua order untuk Dashboard Admin
   async getAllOrders() {
@@ -171,5 +168,10 @@ export class OrdersService {
 
     return { message: 'Webhook berhasil diproses, status pesanan diperbarui' };
   }
-  
+  async getOrderById(id: string) {
+    const supabase = this.supabaseService.getClient();
+    const { data, error } = await supabase.from('orders').select('*').eq('id', id).single();
+    if (error || !data) throw new NotFoundException('Pesanan tidak ditemukan');
+    return { data };
+  }
 }
