@@ -1,5 +1,5 @@
 // src/orders/dto/orders.dto.ts
-import { IsString, IsNotEmpty, IsUUID, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID, IsOptional, IsEnum, IsNumber } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 enum OrderType {
@@ -27,6 +27,11 @@ export class CheckoutDto {
   @IsNotEmpty()
   customer_phone!: string;
 
+  @ApiPropertyOptional({ example: 'user@email.com' })
+  @IsString()
+  @IsOptional()
+  customer_email?: string;
+
   @ApiPropertyOptional({ example: { id: '12345678', server: '2012' }, description: 'Wajib diisi jika order_type adalah topup' })
   @IsOptional()
   game_credentials?: any;
@@ -35,4 +40,10 @@ export class CheckoutDto {
   @IsString()
   @IsOptional()
   voucher_code?: string;
+
+  // --- TAMBAHAN BARU ---
+  @ApiPropertyOptional({ example: 150000, description: 'Total harga dari frontend setelah diskon (opsional)' })
+  @IsNumber()
+  @IsOptional()
+  total_amount?: number;
 }

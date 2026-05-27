@@ -14,7 +14,8 @@ export class AuthService {
       password: registerDto.password,
       options: {
         data: {
-          full_name: registerDto.full_name, // Ini akan ditangkap oleh Trigger database yang kita buat sebelumnya
+          full_name: registerDto.full_name, 
+          phone: registerDto.phone, // <--- TAMBAHKAN BARIS INI
         },
       },
     });
