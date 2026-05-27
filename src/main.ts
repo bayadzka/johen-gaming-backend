@@ -1,31 +1,20 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
-  // Mengaktifkan validasi global
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-  }));
 
-  // Mengaktifkan CORS
-  app.enableCors();
+  // TAMBAHKAN KODE INI UNTUK MEMBUKA PINTU CORS
+  app.enableCors({
+    origin: [
+      'http://localhost:3000', // Izinkan akses dari laptop kamu
+      'https://johen-gaming-frontend.vercel.app', // Izinkan akses dari Vercel
+    ],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+  });
 
-  // Setup Swagger API Documentation
-  const config = new DocumentBuilder()
-    .setTitle('Johen Gaming API')
-    .setDescription('Dokumentasi API untuk Prototype Digital Marketplace')
-    .setVersion('1.0')
-    .addBearerAuth() // Nanti kepakai banget buat endpoint yang butuh login
-    .build();
-  
-  const document = SwaggerModule.createDocument(app, config);
-  // Swagger akan bisa diakses di URL: http://localhost:3000/api
-  SwaggerModule.setup('api', app, document);
-
-  await app.listen(process.env.PORT ?? 3000);
+  // Pastikan port-nya diset ke env.PORT agar Railway tidak bingung
+  await app.listen(process.env.PORT || 8080);
 }
 bootstrap();
