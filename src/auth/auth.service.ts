@@ -8,7 +8,7 @@ export class AuthService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
   async register(registerDto: RegisterDto) {
-    const supabase = this.supabaseService.getAnonClient();
+    const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase.auth.signUp({
       email: registerDto.email,
       password: registerDto.password,
@@ -25,7 +25,7 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto) {
-    const supabase = this.supabaseService.getAnonClient();
+    const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase.auth.signInWithPassword({
       email: loginDto.email,
       password: loginDto.password,
