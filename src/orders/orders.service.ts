@@ -236,18 +236,25 @@ export class OrdersService {
 
     if (error || !order) throw new NotFoundException('Pesanan tidak ditemukan');
 
+    const targetEmail = order.customer_email;
+    if (!targetEmail) {
+      throw new BadRequestException('Email pembeli tidak ditemukan di data pesanan ini.');
+    }
+
+    console.log(`[EMAIL] Memulai proses kirim ke: ${targetEmail}`);
+
     const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  auth: {
-    user: this.configService.get<string>('EMAIL_USER'),
-    pass: this.configService.get<string>('EMAIL_PASS'),
-  },
-  tls: {
-    rejectUnauthorized: false,
-  }
-});
+      host: 'smtp.gmail.com', 
+      port: 465,
+      secure: true,
+      auth: {
+        user: this.configService.get<string>('EMAIL_USER'),
+        pass: this.configService.get<string>('EMAIL_PASS'),
+      },
+      tls: {
+        rejectUnauthorized: false, 
+      },
+    });
 
     const htmlTemplate = `
       <div style="background-color:#05050D; padding:40px; font-family:sans-serif; color:#ffffff;">
@@ -270,22 +277,16 @@ export class OrdersService {
       </div>
     `;
 
-    const targetEmail = order.customer_email;
-
-    if (!targetEmail) {
-      throw new BadRequestException('Email pembeli tidak ditemukan di data pesanan ini.');
-    }
-
     try {
-      await transporter.sendMail({
+      const info = await transporter.sendMail({
         from: '"Johen Gaming" <noreply@johengaming.com>',
         to: targetEmail,
         subject: 'Detail Akun Game Kamu! - Johen Gaming',
         html: htmlTemplate,
       });
 
-      // PERBAIKAN: Memaksa eksekusi update status dengan .select().single()
-      // PERBAIKAN: Memaksa eksekusi update status dengan kata yang diizinkan database ('completed')
+      console.log(`[EMAIL SUKSES] Berhasil terkirim! Message ID: ${info.messageId}`);
+
       const { data: updatedOrder, error: updateError } = await supabase
         .from('orders')
         .update({ payment_status: 'completed' })
@@ -294,14 +295,14 @@ export class OrdersService {
         .single();
 
       if (updateError) {
-        console.error("GAGAL UPDATE STATUS SUPABASE:", updateError);
+        console.error("[DATABASE ERROR] Gagal update status jadi completed:", updateError);
         throw new InternalServerErrorException('Email berhasil dikirim, tapi gagal merubah status menjadi completed di database!');
       }
 
       return { message: 'Data akun berhasil dikirim ke email pembeli dan status pesanan menjadi DONE!' };
     } catch (mailError) {
-      console.error("Gagal mengirim email:", mailError);
-      throw new InternalServerErrorException('Gagal mengirim email, silakan cek konfigurasi akun Gmail admin.');
+      console.error("[EMAIL ERROR FATAL] Detail gagal kirim:", mailError);
+      throw new InternalServerErrorException('Gagal mengirim email, koneksi ke Gmail terputus.');
     }
   }
 }
