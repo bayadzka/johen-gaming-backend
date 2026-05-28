@@ -6,13 +6,20 @@ export class SupabaseService {
   private supabase: SupabaseClient;
 
   constructor() {
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || '';
-
-    this.supabase = createClient(supabaseUrl, supabaseKey);
+    this.supabase = createClient(
+      process.env.SUPABASE_URL as string,
+      process.env.SUPABASE_SERVICE_KEY as string,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      }
+    );
   }
 
-  getClient(): SupabaseClient {
+  getClient() {
     return this.supabase;
   }
 }
