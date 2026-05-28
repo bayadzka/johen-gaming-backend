@@ -237,12 +237,17 @@ export class OrdersService {
     if (error || !order) throw new NotFoundException('Pesanan tidak ditemukan');
 
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: this.configService.get<string>('EMAIL_USER'),
-        pass: this.configService.get<string>('EMAIL_PASS'),
-      },
-    });
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
+  auth: {
+    user: this.configService.get<string>('EMAIL_USER'),
+    pass: this.configService.get<string>('EMAIL_PASS'),
+  },
+  tls: {
+    rejectUnauthorized: false,
+  }
+});
 
     const htmlTemplate = `
       <div style="background-color:#05050D; padding:40px; font-family:sans-serif; color:#ffffff;">
