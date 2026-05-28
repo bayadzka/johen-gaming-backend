@@ -3,18 +3,18 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
-  // TAMBAHKAN KODE INI UNTUK MEMBUKA PINTU CORS
+  
+  // Pastikan CORS terbuka dengan benar
   app.enableCors({
-    origin: [
-      'http://localhost:3000', // Izinkan akses dari laptop kamu
-      'https://johen-gaming-frontend.vercel.app', // Izinkan akses dari Vercel
-    ],
+    origin: '*', 
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
 
-  // Pastikan port-nya diset ke env.PORT agar Railway tidak bingung
-  await app.listen(process.env.PORT || 8080);
+  const port = process.env.PORT || 3000;
+  
+  await app.listen(port, '0.0.0.0'); 
+  
+  console.log(`Application is running on port ${port}`);
 }
 bootstrap();
